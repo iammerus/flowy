@@ -60,20 +60,22 @@ class TransitionDefinition
     ) {
         $this->targetStepId = $targetStepId;
         $this->conditionIdentifier = $conditionIdentifier;
-        $this->conditionType = $conditionType;
+        $this->conditionType = $conditionType ?? self::inferConditionType($conditionIdentifier);
         $this->conditionParameters = $conditionParameters;
         $this->event = $event;
+    }
 
-        if ($this->conditionIdentifier !== null && $this->conditionType === null) {
-            // Basic inference for MVP if not explicitly set
-            // This could be refined or made stricter based on loader logic
-            if (class_exists($this->conditionIdentifier)) {
-                $this->conditionType = 'class';
-            } elseif (is_string($this->conditionIdentifier) && !empty($this->conditionIdentifier)) {
-                // Assume service ID if not a class and not empty.
-                // This is a simplification; actual resolution happens in ConditionResolver.
-                $this->conditionType = 'service';
-            }
+    private static function inferConditionType(?string $conditionIdentifier): ?string
+    {
+        if ($conditionIdentifier === null) {
+            return null;
         }
+        if (class_exists($conditionIdentifier)) {
+            return 'class';
+        }
+        if (is_string($conditionIdentifier) && $conditionIdentifier !== '') {
+            return 'service';
+        }
+        return null;
     }
 }
