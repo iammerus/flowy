@@ -154,4 +154,275 @@ class WorkflowExecutorTest extends TestCase
         $this->assertEquals(WorkflowStatus::FAILED, $instance->status);
         $this->assertStringContainsString('fail', $instance->errorDetails);
     }
+
+    public function testLogsAllLifecycleEventsAndErrors(): void
+    {
+        $instanceId = $this->createMock(WorkflowInstanceIdInterface::class);
+        $instanceId->method('toString')->willReturn('id-1');
+        $instance = new WorkflowInstance(
+            $instanceId,
+            'wf-id',
+            '1.0',
+            WorkflowStatus::PENDING,
+            new WorkflowContext([]),
+            new \DateTimeImmutable('-1 hour'),
+            new \DateTimeImmutable(),
+            null,
+            null,
+            [],
+            null,
+            0,
+            1
+        );
+        $step = new StepDefinition(
+            'step1',
+            [new ActionDefinition(fn(WorkflowContext $ctx) => $ctx->set('ran', true))],
+            [new TransitionDefinition('step2')],
+            'Step 1',
+            null,
+            true,
+            'action',
+            null
+        );
+        $step2 = new StepDefinition(
+            'step2',
+            [],
+            [],
+            'Step 2',
+            null,
+            false,
+            'action',
+            null
+        );
+        $definition = new WorkflowDefinition(
+            'wf-id',
+            '1.0',
+            'step1',
+            [$step, $step2]
+        );
+        $persistence = $this->createMock(PersistenceInterface::class);
+        $persistence->method('find')->willReturn($instance);
+        $persistence->expects($this->atLeastOnce())->method('save');
+        $actionResolver = new ActionResolver();
+        $conditionResolver = new class extends ConditionResolver {
+            public function resolve($transition) { return null; }
+        };
+        $definitionRegistry = $this->createMock(DefinitionRegistryInterface::class);
+        $definitionRegistry->method('getDefinition')->willReturn($definition);
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->atLeastOnce())->method('dispatch');
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->atLeastOnce())->method('info');
+        $logger->expects($this->never())->method('error');
+        $executor = new WorkflowExecutor(
+            $persistence,
+            $actionResolver,
+            $conditionResolver,
+            $definitionRegistry,
+            $eventDispatcher,
+            $logger
+        );
+        $executor->proceed($instanceId);
+        $this->assertEquals('step2', $instance->currentStepId);
+        $this->assertEquals(WorkflowStatus::COMPLETED, $instance->status);
+        $this->assertTrue($instance->context->get('ran'));
+    }
+
+    public function testLogsErrorOnActionFailure(): void
+    {
+        $instanceId = $this->createMock(WorkflowInstanceIdInterface::class);
+        $instanceId->method('toString')->willReturn('id-2');
+        $instance = new WorkflowInstance(
+            $instanceId,
+            'wf-id',
+            '1.0',
+            WorkflowStatus::PENDING,
+            new WorkflowContext([]),
+            new \DateTimeImmutable('-1 hour'),
+            new \DateTimeImmutable(),
+            null,
+            null,
+            [],
+            null,
+            0,
+            1
+        );
+        $step = new StepDefinition(
+            'step1',
+            [new ActionDefinition(fn() => throw new \RuntimeException('fail'))],
+            [],
+            'Step 1',
+            null,
+            true,
+            'action',
+            null
+        );
+        $definition = new WorkflowDefinition(
+            'wf-id',
+            '1.0',
+            'step1',
+            [$step]
+        );
+        $persistence = $this->createMock(PersistenceInterface::class);
+        $persistence->method('find')->willReturn($instance);
+        $persistence->expects($this->atLeastOnce())->method('save');
+        $actionResolver = new ActionResolver();
+        $conditionResolver = new class extends ConditionResolver {
+            public function resolve($transition) { return null; }
+        };
+        $definitionRegistry = $this->createMock(DefinitionRegistryInterface::class);
+        $definitionRegistry->method('getDefinition')->willReturn($definition);
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->atLeastOnce())->method('dispatch');
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->atLeastOnce())->method('error')->with(
+            $this->stringContains('Action execution failed'),
+            $this->arrayHasKey('exception')
+        );
+        $executor = new WorkflowExecutor(
+            $persistence,
+            $actionResolver,
+            $conditionResolver,
+            $definitionRegistry,
+            $eventDispatcher,
+            $logger
+        );
+        $this->expectException(\RuntimeException::class);
+        $executor->proceed($instanceId);
+        $this->assertEquals(WorkflowStatus::FAILED, $instance->status);
+        $this->assertStringContainsString('fail', $instance->errorDetails);
+    }
+
+    public function testActionFailureWithRetryPolicySchedulesRetry(): void
+    {
+        $instanceId = $this->createMock(WorkflowInstanceIdInterface::class);
+        $instanceId->method('toString')->willReturn('id-retry');
+        $instance = new WorkflowInstance(
+            $instanceId,
+            'wf-id',
+            '1.0',
+            WorkflowStatus::PENDING,
+            new WorkflowContext([]),
+            new \DateTimeImmutable('-1 hour'),
+            new \DateTimeImmutable(),
+            null,
+            null,
+            [],
+            null,
+            0,
+            1
+        );
+        $retryPolicy = new \Flowy\Model\Data\RetryPolicy(2, 5);
+        $step = new StepDefinition(
+            'step1',
+            [new ActionDefinition(fn() => throw new \RuntimeException('fail'))],
+            [],
+            'Step 1',
+            null,
+            true,
+            'action',
+            $retryPolicy
+        );
+        $definition = new WorkflowDefinition(
+            'wf-id',
+            '1.0',
+            'step1',
+            [$step]
+        );
+        $persistence = $this->createMock(PersistenceInterface::class);
+        $persistence->method('find')->willReturn($instance);
+        $persistence->expects($this->atLeastOnce())->method('save');
+        $actionResolver = new ActionResolver();
+        $conditionResolver = new class extends ConditionResolver {
+            public function resolve($transition) { return null; }
+        };
+        $definitionRegistry = $this->createMock(DefinitionRegistryInterface::class);
+        $definitionRegistry->method('getDefinition')->willReturn($definition);
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->atLeastOnce())->method('dispatch');
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning')->with(
+            $this->stringContains('Action failed, retry scheduled'),
+            $this->arrayHasKey('exception')
+        );
+        $executor = new WorkflowExecutor(
+            $persistence,
+            $actionResolver,
+            $conditionResolver,
+            $definitionRegistry,
+            $eventDispatcher,
+            $logger
+        );
+        $executor->proceed($instanceId);
+        $this->assertEquals(WorkflowStatus::PENDING, $instance->status);
+        $this->assertEquals(1, $instance->retryAttempts);
+        $this->assertNotNull($instance->scheduledAt);
+        $this->assertStringContainsString('fail', $instance->errorDetails);
+    }
+
+    public function testActionFailureExceedsRetryPolicyFailsInstance(): void
+    {
+        $instanceId = $this->createMock(WorkflowInstanceIdInterface::class);
+        $instanceId->method('toString')->willReturn('id-retry-fail');
+        $instance = new WorkflowInstance(
+            $instanceId,
+            'wf-id',
+            '1.0',
+            WorkflowStatus::PENDING,
+            new WorkflowContext([]),
+            new \DateTimeImmutable('-1 hour'),
+            new \DateTimeImmutable(),
+            null,
+            null,
+            [],
+            null,
+            2, // Already retried twice
+            1
+        );
+        $retryPolicy = new \Flowy\Model\Data\RetryPolicy(2, 5);
+        $step = new StepDefinition(
+            'step1',
+            [new ActionDefinition(fn() => throw new \RuntimeException('fail again'))],
+            [],
+            'Step 1',
+            null,
+            true,
+            'action',
+            $retryPolicy
+        );
+        $definition = new WorkflowDefinition(
+            'wf-id',
+            '1.0',
+            'step1',
+            [$step]
+        );
+        $persistence = $this->createMock(PersistenceInterface::class);
+        $persistence->method('find')->willReturn($instance);
+        $persistence->expects($this->atLeastOnce())->method('save');
+        $actionResolver = new ActionResolver();
+        $conditionResolver = new class extends ConditionResolver {
+            public function resolve($transition) { return null; }
+        };
+        $definitionRegistry = $this->createMock(DefinitionRegistryInterface::class);
+        $definitionRegistry->method('getDefinition')->willReturn($definition);
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->atLeastOnce())->method('dispatch');
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('error')->with(
+            $this->stringContains('Action execution failed'),
+            $this->arrayHasKey('exception')
+        );
+        $executor = new WorkflowExecutor(
+            $persistence,
+            $actionResolver,
+            $conditionResolver,
+            $definitionRegistry,
+            $eventDispatcher,
+            $logger
+        );
+        $this->expectException(\RuntimeException::class);
+        $executor->proceed($instanceId);
+        $this->assertEquals(WorkflowStatus::FAILED, $instance->status);
+        $this->assertStringContainsString('fail again', $instance->errorDetails);
+    }
 }

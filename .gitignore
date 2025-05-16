@@ -3,3 +3,5 @@ vendor/
 SPEC.md
 TASKS.md
 .codacy/
+.phpunit.result.cache
+.vscode/

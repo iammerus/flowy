@@ -16,10 +16,10 @@ use Flowy\Loader\AttributeDefinitionLoader;
 use Flowy\Loader\YamlDefinitionLoader;
 
 class TestAttributeDefinitionLoader extends AttributeDefinitionLoader {
-    public function loadFromClass($class) { return $GLOBALS['dummy_definition']; }
+    public function loadFromClass(string $className): WorkflowDefinition { return $GLOBALS['dummy_definition']; }
 }
 class TestYamlDefinitionLoader extends YamlDefinitionLoader {
-    public function loadFromFile($file) { return $GLOBALS['dummy_definition']; }
+    public function loadFromFile(string $filePath): WorkflowDefinition { return $GLOBALS['dummy_definition']; }
 }
 
 /**

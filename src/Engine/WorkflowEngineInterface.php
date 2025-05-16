@@ -68,4 +68,14 @@ interface WorkflowEngineInterface
      * @return WorkflowInstance[]
      */
     public function findInstancesByStatus(WorkflowStatus $status, ?string $workflowDefinitionId = null, ?int $limit = null): array;
+
+    /**
+     * Retries a failed workflow instance from its current step.
+     *
+     * Resets retry attempts, sets status to PENDING, clears error details, and resumes execution.
+     *
+     * @param WorkflowInstanceIdInterface $id
+     * @return void
+     */
+    public function retryFailedStep(WorkflowInstanceIdInterface $id): void;
 }

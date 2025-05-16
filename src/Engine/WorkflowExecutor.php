@@ -112,18 +112,44 @@ final class WorkflowExecutor implements WorkflowExecutorInterface
                     ]);
                     $this->eventDispatcher->dispatch(new \Flowy\Event\AfterActionExecutedEvent($instance, $step, $actionDef));
                 } catch (\Throwable $e) {
-                    $instance->status = \Flowy\Model\WorkflowStatus::FAILED;
-                    $instance->errorDetails = $e->getMessage();
-                    $this->eventDispatcher->dispatch(new \Flowy\Event\ActionFailedEvent($instance, $step, $actionDef, $e));
-                    $this->persistence->save($instance);
-                    $this->logger->error('Action execution failed', [
-                        'exception' => $e,
-                        'instance_id' => (string)$instance->id,
-                        'workflow_id' => $instance->definitionId,
-                        'step_id' => $step->id,
-                        'action' => $actionDef->name ?? null
-                    ]);
-                    throw $e;
+                    $retryPolicy = $step->retryPolicy;
+                    $maxAttempts = $retryPolicy?->attempts ?? 0;
+                    $delay = $retryPolicy?->fixedDelaySeconds ?? 0;
+                    $instance->retryAttempts = ($instance->retryAttempts ?? 0) + 1;
+                    if ($maxAttempts > 0 && $instance->retryAttempts <= $maxAttempts) {
+                        $instance->status = \Flowy\Model\WorkflowStatus::PENDING;
+                        $instance->scheduledAt = (new \DateTimeImmutable())->modify("+{$delay} seconds");
+                        $instance->errorDetails = $e->getMessage();
+                        $this->eventDispatcher->dispatch(new \Flowy\Event\ActionFailedEvent($instance, $step, $actionDef, $e));
+                        $this->persistence->save($instance);
+                        $this->logger->warning('Action failed, retry scheduled', [
+                            'exception' => $e,
+                            'instance_id' => (string)$instance->id,
+                            'workflow_id' => $instance->definitionId,
+                            'step_id' => $step->id,
+                            'action' => $actionDef->name ?? null,
+                            'retry_attempts' => $instance->retryAttempts,
+                            'max_attempts' => $maxAttempts,
+                            'scheduled_at' => $instance->scheduledAt?->format(DATE_ATOM),
+                        ]);
+                        // Exit early, do not throw, let polling pick up later
+                        return;
+                    } else {
+                        $instance->status = \Flowy\Model\WorkflowStatus::FAILED;
+                        $instance->errorDetails = $e->getMessage();
+                        $this->eventDispatcher->dispatch(new \Flowy\Event\ActionFailedEvent($instance, $step, $actionDef, $e));
+                        $this->persistence->save($instance);
+                        $this->logger->error('Action execution failed', [
+                            'exception' => $e,
+                            'instance_id' => (string)$instance->id,
+                            'workflow_id' => $instance->definitionId,
+                            'step_id' => $step->id,
+                            'action' => $actionDef->name ?? null,
+                            'retry_attempts' => $instance->retryAttempts,
+                            'max_attempts' => $maxAttempts,
+                        ]);
+                        throw $e;
+                    }
                 }
             }
 

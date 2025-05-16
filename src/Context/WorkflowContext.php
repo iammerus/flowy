@@ -137,6 +137,16 @@ class WorkflowContext implements \JsonSerializable, \ArrayAccess, \IteratorAggre
         return new static($data);
     }
 
+    /**
+     * Returns the context data as an array for serialization.
+     *
+     * @return array<string, mixed>
+     */
+    public function toArray(): array
+    {
+        return $this->data;
+    }
+
     // ArrayAccess methods
 
     /** @param string $offset */

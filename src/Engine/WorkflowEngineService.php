@@ -10,6 +10,8 @@ use Flowy\Model\WorkflowStatus;
 use Flowy\Context\WorkflowContext;
 use Flowy\Persistence\PersistenceInterface;
 use Flowy\Registry\DefinitionRegistryInterface;
+use Psr\Log\LoggerInterface;
+use Flowy\Engine\WorkflowExecutorInterface;
 
 /**
  * Default implementation of WorkflowEngineInterface.
@@ -19,9 +21,10 @@ use Flowy\Registry\DefinitionRegistryInterface;
 final class WorkflowEngineService implements WorkflowEngineInterface
 {
     public function __construct(
-        private readonly WorkflowExecutor $executor,
+        private readonly WorkflowExecutorInterface $executor,
         private readonly PersistenceInterface $persistence,
-        private readonly DefinitionRegistryInterface $definitionRegistry
+        private readonly DefinitionRegistryInterface $definitionRegistry,
+        private readonly LoggerInterface $logger
     ) {}
 
     public function start(string $workflowId, ?string $version = null, ?WorkflowContext $context = null, ?string $businessKey = null): WorkflowInstance
@@ -43,6 +46,12 @@ final class WorkflowEngineService implements WorkflowEngineInterface
             1
         );
         $this->persistence->save($instance);
+        $this->logger->info('Workflow instance started', [
+            'workflow_id' => $workflowId,
+            'instance_id' => (string)$instance->id,
+            'version' => $definition->version,
+            'business_key' => $businessKey,
+        ]);
         $this->executor->proceed($instance->id);
         return $instance;
     }
@@ -53,6 +62,10 @@ final class WorkflowEngineService implements WorkflowEngineInterface
         if ($instance && $instance->status === WorkflowStatus::RUNNING) {
             $instance->status = WorkflowStatus::PAUSED;
             $this->persistence->save($instance);
+            $this->logger->info('Workflow instance paused', [
+                'instance_id' => (string)$id,
+                'workflow_id' => $instance->definitionId,
+            ]);
         }
     }
 
@@ -62,6 +75,10 @@ final class WorkflowEngineService implements WorkflowEngineInterface
         if ($instance && $instance->status === WorkflowStatus::PAUSED) {
             $instance->status = WorkflowStatus::RUNNING;
             $this->persistence->save($instance);
+            $this->logger->info('Workflow instance resumed', [
+                'instance_id' => (string)$id,
+                'workflow_id' => $instance->definitionId,
+            ]);
             $this->executor->proceed($id);
         }
     }
@@ -72,6 +89,10 @@ final class WorkflowEngineService implements WorkflowEngineInterface
         if ($instance && !$instance->status->isTerminal()) {
             $instance->status = WorkflowStatus::CANCELLED;
             $this->persistence->save($instance);
+            $this->logger->info('Workflow instance cancelled', [
+                'instance_id' => (string)$id,
+                'workflow_id' => $instance->definitionId,
+            ]);
         }
     }
 
