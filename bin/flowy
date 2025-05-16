@@ -16,5 +16,11 @@ $application = new Application('Flowy Workflow Engine CLI', '0.1.0');
 $application->add(new FlowyListCommand());
 $application->add(new FlowyDefinitionListCommand($definitionRegistry));
 $application->add(new FlowyDefinitionShowCommand($definitionRegistry));
+// Register the new instance:start command (engine service must be injected in real app)
+// $application->add(new FlowyInstanceStartCommand($engine));
+// $application->add(new FlowyInstanceShowCommand($engine));
+// $application->add(new FlowyInstanceStatusCommand($engine));
+// $application->add(new FlowyInstanceRetryCommand($engine));
+// $application->add(new FlowyInstanceCancelCommand($engine));
 $application->setDefaultCommand('flowy:list', true);
 $application->run();
