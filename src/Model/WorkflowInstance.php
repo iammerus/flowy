@@ -5,57 +5,70 @@ declare(strict_types=1);
 namespace Flowy\Model;
 
 use DateTimeImmutable;
+use Doctrine\ORM\Mapping as ORM;
 use Flowy\Context\WorkflowContext;
 
 /**
  * Represents a single, live execution of a WorkflowDefinition.
  */
+#[ORM\Entity]
+#[ORM\Table(name: 'workflow_instances')]
 class WorkflowInstance
 {
     /**
      * Unique identifier for the workflow instance.
      */
+    #[ORM\Id]
+    #[ORM\Column(type: 'workflow_instance_id', unique: true)]
     public readonly WorkflowInstanceIdInterface $id;
 
     /**
      * Identifier of the workflow definition this instance is based on.
      */
+    #[ORM\Column(type: 'string')]
     public readonly string $definitionId;
 
     /**
      * Version of the workflow definition this instance is based on.
      */
+    #[ORM\Column(type: 'string')]
     public readonly string $definitionVersion;
 
     /**
      * Current status of the workflow instance.
      */
+    #[ORM\Column(type: 'string', enumType: WorkflowStatus::class)]
     public WorkflowStatus $status;
 
     /**
      * The context data associated with this workflow instance.
      */
+    #[ORM\Column(type: \Flowy\Persistence\Doctrine\Type\WorkflowContextType::NAME)]
     public WorkflowContext $context;
 
     /**
      * Timestamp of when the instance was created.
      */
+    #[ORM\Column(type: 'datetime_immutable')]
     public readonly DateTimeImmutable $createdAt;
 
     /**
      * Timestamp of the last update to the instance.
      */
+    #[ORM\Column(type: 'datetime_immutable')]
     public DateTimeImmutable $updatedAt;
 
     /**
      * Optional business key for correlating this instance with external systems.
      */
+    #[ORM\Column(type: 'string', nullable: true)]
     public readonly ?string $businessKey;
 
     /**
      * Identifier of the current step the workflow instance is at.
      * Null if the workflow hasn't started or has completed.
      */
+    #[ORM\Column(type: 'string', nullable: true)]
     public ?string $currentStepId;
 
     /**
@@ -64,37 +77,45 @@ class WorkflowInstance
      *
      * @var array<int, array<string, mixed>>
      */
+    #[ORM\Column(type: 'json')]
     public array $history = [];
 
     /**
      * Details of the last error that occurred, if any.
      */
+    #[ORM\Column(type: 'text', nullable: true)]
     public ?string $errorDetails = null;
 
     /**
      * Number of retry attempts for the current failing step.
      * Reset when moving to a new step or successful retry.
      */
+    #[ORM\Column(type: 'integer')]
     public int $retryAttempts = 0;
 
     /**
      * Version number for optimistic locking.
      */
+    #[ORM\Version]
+    #[ORM\Column(type: 'integer')]
     public int $version = 1;
 
     /**
      * Identifier of the worker that has locked this instance (for pessimistic locking - Phase 3).
      */
+    #[ORM\Column(type: 'string', nullable: true)]
     public ?string $lockedBy = null;
 
     /**
      * Timestamp when the pessimistic lock expires (Phase 3).
      */
+    #[ORM\Column(type: 'datetime_immutable', nullable: true)]
     public ?DateTimeImmutable $lockExpiresAt = null;
 
     /**
      * Timestamp when this instance is scheduled for its next processing (e.g., for delayed retries or timed transitions - Phase 2+).
      */
+    #[ORM\Column(type: 'datetime_immutable', nullable: true)]
     public ?DateTimeImmutable $scheduledAt = null;
 
     /**
