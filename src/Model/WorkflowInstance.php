@@ -125,6 +125,14 @@ class WorkflowInstance
     public ?\DateTimeImmutable $stepStartedAt = null;
 
     /**
+     * List of received signals (each is an array: ['name' => string, 'payload' => array, 'timestamp' => DateTimeImmutable])
+     *
+     * @var array<int, array{name: string, payload: array, timestamp: \DateTimeImmutable}>
+     */
+    #[ORM\Column(type: 'json')]
+    public array $signals = [];
+
+    /**
      * @param WorkflowInstanceIdInterface $id
      * @param string $definitionId
      * @param string $definitionVersion
@@ -142,6 +150,7 @@ class WorkflowInstance
      * @param DateTimeImmutable|null $lockExpiresAt
      * @param DateTimeImmutable|null $scheduledAt
      * @param DateTimeImmutable|null $stepStartedAt
+     * @param array<int, array{name: string, payload: array, timestamp: \DateTimeImmutable}> $signals
      */
     public function __construct(
         WorkflowInstanceIdInterface $id,
@@ -160,7 +169,8 @@ class WorkflowInstance
         ?string $lockedBy = null,
         ?DateTimeImmutable $lockExpiresAt = null,
         ?DateTimeImmutable $scheduledAt = null,
-        ?DateTimeImmutable $stepStartedAt = null
+        ?DateTimeImmutable $stepStartedAt = null,
+        array $signals = []
     ) {
         $this->id = $id;
         $this->definitionId = $definitionId;
@@ -179,6 +189,7 @@ class WorkflowInstance
         $this->lockExpiresAt = $lockExpiresAt;
         $this->scheduledAt = $scheduledAt;
         $this->stepStartedAt = $stepStartedAt;
+        $this->signals = $signals;
     }
 
     public function addHistoryEvent(string $message, ?string $stepId = null): void
@@ -189,6 +200,22 @@ class WorkflowInstance
             'stepId'    => $stepId ?? $this->currentStepId,
         ];
         $this->updatedAt = new DateTimeImmutable();
+    }
+
+    /**
+     * Add a signal event to the instance.
+     *
+     * @param string $name
+     * @param array $payload
+     */
+    public function addSignal(string $name, array $payload = []): void
+    {
+        $this->signals[] = [
+            'name' => $name,
+            'payload' => $payload,
+            'timestamp' => new \DateTimeImmutable(),
+        ];
+        $this->updatedAt = new \DateTimeImmutable();
     }
 
     // Additional methods to manage status, retries, etc., will be added as needed.

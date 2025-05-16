@@ -296,6 +296,44 @@ class WorkflowEngineServiceTest extends TestCase
         $this->assertNull($instance->errorDetails);
     }
 
+    public function testSignalAddsSignalAndPersistsInstance(): void
+    {
+        $id = $this->createMock(WorkflowInstanceIdInterface::class);
+        $instance = $this->makeInstance($id, WorkflowStatus::RUNNING);
+        $persistence = $this->createMock(PersistenceInterface::class);
+        $persistence->method('find')->willReturn($instance);
+        $persistence->expects($this->once())->method('save')->with($instance);
+        $executor = $this->createMock(WorkflowExecutorInterface::class);
+        $definitionRegistry = $this->createMock(DefinitionRegistryInterface::class);
+        $logger = $this->createMock(\Psr\Log\LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('info')
+            ->with(
+                $this->stringContains('Signal received'),
+                $this->arrayHasKey('signal')
+            );
+        $engine = new WorkflowEngineService($executor, $persistence, $definitionRegistry, $logger);
+        $engine->signal($id, 'my_signal', ['foo' => 'bar']);
+        $this->assertNotEmpty($instance->signals);
+        $lastSignal = end($instance->signals);
+        $this->assertSame('my_signal', $lastSignal['name']);
+        $this->assertSame(['foo' => 'bar'], $lastSignal['payload']);
+        $this->assertInstanceOf(\DateTimeImmutable::class, $lastSignal['timestamp']);
+    }
+
+    public function testSignalThrowsIfInstanceNotFound(): void
+    {
+        $id = $this->createMock(WorkflowInstanceIdInterface::class);
+        $persistence = $this->createMock(PersistenceInterface::class);
+        $persistence->method('find')->willReturn(null);
+        $executor = $this->createMock(WorkflowExecutorInterface::class);
+        $definitionRegistry = $this->createMock(DefinitionRegistryInterface::class);
+        $logger = $this->createMock(\Psr\Log\LoggerInterface::class);
+        $engine = new WorkflowEngineService($executor, $persistence, $definitionRegistry, $logger);
+        $this->expectException(\Flowy\Exception\DefinitionNotFoundException::class);
+        $engine->signal($id, 'signal', []);
+    }
+
     private function makeInstance($id, WorkflowStatus $status): WorkflowInstance
     {
         return new WorkflowInstance(

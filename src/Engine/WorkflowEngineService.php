@@ -118,6 +118,23 @@ final class WorkflowEngineService implements WorkflowEngineInterface
         }
     }
 
+    public function signal(WorkflowInstanceIdInterface $id, string $signalName, array $payload = []): void
+    {
+        $instance = $this->getInstance($id);
+        if ($instance === null) {
+            throw new \Flowy\Exception\DefinitionNotFoundException('Workflow instance not found: ' . (string)$id);
+        }
+        $instance->addSignal($signalName, $payload);
+        $this->persistence->save($instance);
+        $this->logger->info('Signal received for workflow instance', [
+            'instance_id' => (string)$id,
+            'workflow_id' => $instance->definitionId,
+            'signal' => $signalName,
+            'payload' => $payload,
+        ]);
+        // Event dispatching for signals can be added in future phases
+    }
+
     public function getInstance(WorkflowInstanceIdInterface $id): ?WorkflowInstance
     {
         return $this->persistence->find($id);

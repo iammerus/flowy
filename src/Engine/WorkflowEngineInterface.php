@@ -78,4 +78,14 @@ interface WorkflowEngineInterface
      * @return void
      */
     public function retryFailedStep(WorkflowInstanceIdInterface $id): void;
+
+    /**
+     * Sends a signal to a running workflow instance.
+     *
+     * @param WorkflowInstanceIdInterface $id
+     * @param string $signalName
+     * @param array $payload
+     * @return void
+     */
+    public function signal(WorkflowInstanceIdInterface $id, string $signalName, array $payload = []): void;
 }
