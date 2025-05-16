@@ -11,7 +11,8 @@
         "ramsey/uuid": "^4.7",
         "psr/event-dispatcher": "^1.0",
         "psr/container": "^2.0",
-        "symfony/event-dispatcher": "^7.2"
+        "symfony/event-dispatcher": "^7.2",
+        "symfony/console": "^7.2"
     },
     "license": "MIT",
     "authors": [
