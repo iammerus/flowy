@@ -17,6 +17,7 @@ use Flowy\Model\Data\StepDefinition;
 use Flowy\Model\Data\ActionDefinition;
 use Flowy\Model\Data\TransitionDefinition;
 use PHPUnit\Framework\TestCase;
+use Psr\EventDispatcher\EventDispatcherInterface;
 
 class DummyWorkflowInstanceId implements \Flowy\Model\WorkflowInstanceIdInterface
 {
@@ -228,6 +229,67 @@ class WorkflowEngineServiceTest extends TestCase
             ->method('info')
             ->with($this->stringContains('retry initiated'), $this->arrayHasKey('instance_id'));
         $engine = new WorkflowEngineService($executor, $persistence, $definitionRegistry, $logger);
+        $engine->retryFailedStep($id);
+        $this->assertSame(0, $instance->retryAttempts);
+        $this->assertSame(WorkflowStatus::PENDING, $instance->status);
+        $this->assertNull($instance->errorDetails);
+    }
+
+    public function testResumeDispatchesWorkflowStartedEvent(): void
+    {
+        $id = $this->createMock(WorkflowInstanceIdInterface::class);
+        $instance = $this->makeInstance($id, WorkflowStatus::PAUSED);
+        $persistence = $this->createMock(PersistenceInterface::class);
+        $persistence->method('find')->willReturn($instance);
+        $persistence->expects($this->once())->method('save');
+        $executor = $this->createMock(WorkflowExecutorInterface::class);
+        $executor->expects($this->once())->method('proceed')->with($id);
+        $definitionRegistry = $this->createMock(DefinitionRegistryInterface::class);
+        $logger = $this->createMock(\Psr\Log\LoggerInterface::class);
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->once())
+            ->method('dispatch')
+            ->with($this->isInstanceOf(\Flowy\Event\WorkflowStartedEvent::class));
+        $engine = new WorkflowEngineService($executor, $persistence, $definitionRegistry, $logger, $eventDispatcher);
+        $engine->resume($id);
+    }
+
+    public function testCancelDispatchesWorkflowCancelledEvent(): void
+    {
+        $id = $this->createMock(WorkflowInstanceIdInterface::class);
+        $instance = $this->makeInstance($id, WorkflowStatus::RUNNING);
+        $persistence = $this->createMock(PersistenceInterface::class);
+        $persistence->method('find')->willReturn($instance);
+        $persistence->expects($this->once())->method('save');
+        $executor = $this->createMock(WorkflowExecutorInterface::class);
+        $definitionRegistry = $this->createMock(DefinitionRegistryInterface::class);
+        $logger = $this->createMock(\Psr\Log\LoggerInterface::class);
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->once())
+            ->method('dispatch')
+            ->with($this->isInstanceOf(\Flowy\Event\WorkflowCancelledEvent::class));
+        $engine = new WorkflowEngineService($executor, $persistence, $definitionRegistry, $logger, $eventDispatcher);
+        $engine->cancel($id);
+    }
+
+    public function testRetryFailedStepDispatchesWorkflowStartedEvent(): void
+    {
+        $id = $this->createMock(WorkflowInstanceIdInterface::class);
+        $instance = $this->makeInstance($id, WorkflowStatus::FAILED);
+        $instance->retryAttempts = 3;
+        $instance->errorDetails = 'Some error';
+        $persistence = $this->createMock(PersistenceInterface::class);
+        $persistence->method('find')->willReturn($instance);
+        $persistence->expects($this->once())->method('save');
+        $executor = $this->createMock(WorkflowExecutorInterface::class);
+        $executor->expects($this->once())->method('proceed')->with($id);
+        $definitionRegistry = $this->createMock(DefinitionRegistryInterface::class);
+        $logger = $this->createMock(\Psr\Log\LoggerInterface::class);
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->once())
+            ->method('dispatch')
+            ->with($this->isInstanceOf(\Flowy\Event\WorkflowStartedEvent::class));
+        $engine = new WorkflowEngineService($executor, $persistence, $definitionRegistry, $logger, $eventDispatcher);
         $engine->retryFailedStep($id);
         $this->assertSame(0, $instance->retryAttempts);
         $this->assertSame(WorkflowStatus::PENDING, $instance->status);
