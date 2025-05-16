@@ -497,4 +497,172 @@ class WorkflowExecutorTest extends TestCase
         $this->assertEquals(WorkflowStatus::FAILED, $instance->status);
         $this->assertStringContainsString('timed out', $instance->errorDetails);
     }
+
+    public function testEventBasedTransitionIsTakenWhenSignalPresent(): void
+    {
+        $instanceId = $this->createMock(WorkflowInstanceIdInterface::class);
+        $instanceId->method('toString')->willReturn('id-event');
+        $now = new \DateTimeImmutable();
+        $instance = new WorkflowInstance(
+            $instanceId,
+            'wf-id',
+            '1.0',
+            WorkflowStatus::PENDING,
+            new WorkflowContext([]),
+            $now->sub(new \DateInterval('PT1H')),
+            $now,
+            null,
+            'start',
+            [],
+            null,
+            0,
+            1,
+            null,
+            null,
+            null,
+            $now,
+            [
+                ['name' => 'my_event', 'payload' => ['foo' => 'bar'], 'timestamp' => $now]
+            ]
+        );
+        $eventTransition = new \Flowy\Model\Data\TransitionDefinition(
+            'end',
+            null,
+            null,
+            [],
+            'my_event'
+        );
+        $step = new StepDefinition(
+            'start',
+            [],
+            [$eventTransition],
+            'Start',
+            null,
+            true,
+            'action',
+            null
+        );
+        $endStep = new StepDefinition(
+            'end',
+            [],
+            [],
+            'End',
+            null,
+            false,
+            'action',
+            null
+        );
+        $definition = new WorkflowDefinition(
+            'wf-id',
+            '1.0',
+            'start',
+            [$step, $endStep]
+        );
+        $persistence = $this->createMock(PersistenceInterface::class);
+        $persistence->method('find')->willReturn($instance);
+        $persistence->expects($this->atLeastOnce())->method('save');
+        $actionResolver = new ActionResolver();
+        $conditionResolver = new class extends ConditionResolver {
+            public function resolve($transition) { return null; }
+        };
+        $definitionRegistry = $this->createMock(DefinitionRegistryInterface::class);
+        $definitionRegistry->method('getDefinition')->willReturn($definition);
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->atLeastOnce())->method('dispatch');
+        $logger = $this->createMock(LoggerInterface::class);
+        $executor = new WorkflowExecutor(
+            $persistence,
+            $actionResolver,
+            $conditionResolver,
+            $definitionRegistry,
+            $eventDispatcher,
+            $logger
+        );
+        $executor->proceed($instanceId);
+        $this->assertEquals('end', $instance->currentStepId);
+        $this->assertEmpty($instance->signals, 'Signal should be removed after use');
+    }
+
+    public function testEventBasedTransitionIsNotTakenWithoutSignal(): void
+    {
+        $instanceId = $this->createMock(WorkflowInstanceIdInterface::class);
+        $instanceId->method('toString')->willReturn('id-event-miss');
+        $now = new \DateTimeImmutable();
+        $instance = new WorkflowInstance(
+            $instanceId,
+            'wf-id',
+            '1.0',
+            WorkflowStatus::PENDING,
+            new WorkflowContext([]),
+            $now->sub(new \DateInterval('PT1H')),
+            $now,
+            null,
+            'start',
+            [],
+            null,
+            0,
+            1,
+            null,
+            null,
+            null,
+            $now,
+            [] // No signals
+        );
+        $eventTransition = new \Flowy\Model\Data\TransitionDefinition(
+            'end',
+            null,
+            null,
+            [],
+            'my_event'
+        );
+        $step = new StepDefinition(
+            'start',
+            [],
+            [$eventTransition],
+            'Start',
+            null,
+            true,
+            'action',
+            null
+        );
+        $endStep = new StepDefinition(
+            'end',
+            [],
+            [],
+            'End',
+            null,
+            false,
+            'action',
+            null
+        );
+        $definition = new WorkflowDefinition(
+            'wf-id',
+            '1.0',
+            'start',
+            [$step, $endStep]
+        );
+        $persistence = $this->createMock(PersistenceInterface::class);
+        $persistence->method('find')->willReturn($instance);
+        $persistence->expects($this->atLeastOnce())->method('save');
+        $actionResolver = new ActionResolver();
+        $conditionResolver = new class extends ConditionResolver {
+            public function resolve($transition) { return null; }
+        };
+        $definitionRegistry = $this->createMock(DefinitionRegistryInterface::class);
+        $definitionRegistry->method('getDefinition')->willReturn($definition);
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->atLeastOnce())->method('dispatch');
+        $logger = $this->createMock(LoggerInterface::class);
+        $executor = new WorkflowExecutor(
+            $persistence,
+            $actionResolver,
+            $conditionResolver,
+            $definitionRegistry,
+            $eventDispatcher,
+            $logger
+        );
+        $executor->proceed($instanceId);
+        $this->assertEquals('start', $instance->currentStepId, 'Should remain on start step');
+        $this->assertEmpty($instance->signals, 'No signals should be present');
+    }
 }

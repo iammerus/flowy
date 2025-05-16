@@ -182,32 +182,51 @@ final class WorkflowExecutor implements WorkflowExecutorInterface
             // 7. Step event: AfterStepExitedEvent
             $this->eventDispatcher->dispatch(new \Flowy\Event\AfterStepExitedEvent($instance, $step));
 
-            // 8. Evaluate transitions
+            // 8. Evaluate transitions (event-based transitions first)
             $transitionTaken = false;
+            $signals = $instance->signals ?? [];
             foreach ($step->transitions as $transition) {
-                $condition = $this->conditionResolver->resolve($transition);
-                if ($condition === null || $condition->evaluate($instance->context)) {
-                    $nextStepId = $transition->targetStepId;
-                    $nextStep = $definition->steps[$nextStepId] ?? null;
-                    if ($nextStep === null) {
-                        $this->logger->error('Next step not found during transition', [
-                            'next_step_id' => $nextStepId,
-                            'instance_id' => (string)$instance->id,
-                            'workflow_id' => $instance->definitionId
-                        ]);
-                        throw new \Flowy\Exception\DefinitionNotFoundException('Next step not found: ' . $nextStepId);
+                // Event-based transition: only take if matching signal is present
+                if ($transition->event !== null) {
+                    $signalIndex = null;
+                    foreach ($signals as $idx => $signal) {
+                        if ($signal['name'] === $transition->event) {
+                            $signalIndex = $idx;
+                            break;
+                        }
                     }
-                    $instance->currentStepId = $nextStepId;
-                    $this->logger->info('Transition taken', [
-                        'instance_id' => (string)$instance->id,
-                        'workflow_id' => $instance->definitionId,
-                        'from_step' => $step->id,
-                        'to_step' => $nextStepId
-                    ]);
-                    $this->eventDispatcher->dispatch(new \Flowy\Event\TransitionTakenEvent($instance, $step, $nextStep, $transition));
-                    $transitionTaken = true;
-                    break;
+                    if ($signalIndex === null) {
+                        continue; // No matching signal, skip this transition
+                    }
+                    // Remove the signal after use
+                    array_splice($instance->signals, $signalIndex, 1);
+                } else {
+                    // Condition-based or unconditional transition
+                    $condition = $this->conditionResolver->resolve($transition);
+                    if ($condition !== null && !$condition->evaluate($instance->context)) {
+                        continue;
+                    }
                 }
+                $nextStepId = $transition->targetStepId;
+                $nextStep = $definition->steps[$nextStepId] ?? null;
+                if ($nextStep === null) {
+                    $this->logger->error('Next step not found during transition', [
+                        'next_step_id' => $nextStepId,
+                        'instance_id' => (string)$instance->id,
+                        'workflow_id' => $instance->definitionId
+                    ]);
+                    throw new \Flowy\Exception\DefinitionNotFoundException('Next step not found: ' . $nextStepId);
+                }
+                $instance->currentStepId = $nextStepId;
+                $this->logger->info('Transition taken', [
+                    'instance_id' => (string)$instance->id,
+                    'workflow_id' => $instance->definitionId,
+                    'from_step' => $step->id,
+                    'to_step' => $nextStepId
+                ]);
+                $this->eventDispatcher->dispatch(new \Flowy\Event\TransitionTakenEvent($instance, $step, $nextStep, $transition));
+                $transitionTaken = true;
+                break;
             }
 
             // 9. If no transition taken, mark as completed
