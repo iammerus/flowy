@@ -84,6 +84,32 @@ final class WorkflowExecutor implements WorkflowExecutorInterface
                 );
             }
 
+            // Set stepStartedAt if entering a new step
+            if ($instance->stepStartedAt === null || $instance->currentStepId !== $currentStepId) {
+                $instance->stepStartedAt = new \DateTimeImmutable();
+            }
+
+            // Step-level timeout check
+            if ($step->timeoutDuration !== null && $instance->stepStartedAt !== null) {
+                $timeoutInterval = \DateInterval::createFromDateString($step->timeoutDuration);
+                if ($timeoutInterval !== false) {
+                    $timeoutDeadline = $instance->stepStartedAt->add($timeoutInterval);
+                    if ((new \DateTimeImmutable()) > $timeoutDeadline) {
+                        $instance->status = \Flowy\Model\WorkflowStatus::FAILED;
+                        $instance->errorDetails = 'Step timed out after ' . $step->timeoutDuration;
+                        $this->logger->error('Step timed out', [
+                            'instance_id' => (string)$instance->id,
+                            'workflow_id' => $instance->definitionId,
+                            'step_id' => $step->id,
+                            'timeoutDuration' => $step->timeoutDuration,
+                        ]);
+                        $this->persistence->save($instance);
+                        $this->eventDispatcher->dispatch(new \Flowy\Event\WorkflowFailedEvent($instance, null));
+                        return;
+                    }
+                }
+            }
+
             // 4. If instance is PENDING, set to RUNNING and dispatch WorkflowStartedEvent
             if ($instance->status === \Flowy\Model\WorkflowStatus::PENDING) {
                 $instance->status = \Flowy\Model\WorkflowStatus::RUNNING;

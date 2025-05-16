@@ -425,4 +425,76 @@ class WorkflowExecutorTest extends TestCase
         $this->assertEquals(WorkflowStatus::FAILED, $instance->status);
         $this->assertStringContainsString('fail again', $instance->errorDetails);
     }
+
+    public function testStepTimeoutFailsInstanceAndDispatchesEvent(): void
+    {
+        $instanceId = $this->createMock(WorkflowInstanceIdInterface::class);
+        $instanceId->method('toString')->willReturn('id-timeout');
+        $now = new \DateTimeImmutable();
+        $instance = new WorkflowInstance(
+            $instanceId,
+            'wf-id',
+            '1.0',
+            WorkflowStatus::PENDING,
+            new WorkflowContext([]),
+            $now->sub(new \DateInterval('PT1H')),
+            $now,
+            null,
+            'step1',
+            [],
+            null,
+            0,
+            1,
+            null,
+            null,
+            null,
+            $now->sub(new \DateInterval('PT10M')) // stepStartedAt 10 minutes ago
+        );
+        $step = new StepDefinition(
+            'step1',
+            [new ActionDefinition(fn() => true)],
+            [],
+            'Step 1',
+            null,
+            true,
+            'action',
+            null,
+            'PT5M' // 5 minute timeout
+        );
+        $definition = new WorkflowDefinition(
+            'wf-id',
+            '1.0',
+            'step1',
+            [$step]
+        );
+        $persistence = $this->createMock(PersistenceInterface::class);
+        $persistence->method('find')->willReturn($instance);
+        $persistence->expects($this->atLeastOnce())->method('save');
+        $actionResolver = new ActionResolver();
+        $conditionResolver = new class extends ConditionResolver {
+            public function resolve($transition) { return null; }
+        };
+        $definitionRegistry = $this->createMock(DefinitionRegistryInterface::class);
+        $definitionRegistry->method('getDefinition')->willReturn($definition);
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->once())->method('dispatch')->with(
+            $this->isInstanceOf(\Flowy\Event\WorkflowFailedEvent::class)
+        );
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('error')->with(
+            $this->stringContains('Step timed out'),
+            $this->arrayHasKey('instance_id')
+        );
+        $executor = new WorkflowExecutor(
+            $persistence,
+            $actionResolver,
+            $conditionResolver,
+            $definitionRegistry,
+            $eventDispatcher,
+            $logger
+        );
+        $executor->proceed($instanceId);
+        $this->assertEquals(WorkflowStatus::FAILED, $instance->status);
+        $this->assertStringContainsString('timed out', $instance->errorDetails);
+    }
 }

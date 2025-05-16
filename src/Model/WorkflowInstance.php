@@ -119,6 +119,12 @@ class WorkflowInstance
     public ?DateTimeImmutable $scheduledAt = null;
 
     /**
+     * Timestamp when the current step was entered (for timeout handling).
+     */
+    #[ORM\Column(type: 'datetime_immutable', nullable: true)]
+    public ?\DateTimeImmutable $stepStartedAt = null;
+
+    /**
      * @param WorkflowInstanceIdInterface $id
      * @param string $definitionId
      * @param string $definitionVersion
@@ -135,6 +141,7 @@ class WorkflowInstance
      * @param string|null $lockedBy
      * @param DateTimeImmutable|null $lockExpiresAt
      * @param DateTimeImmutable|null $scheduledAt
+     * @param DateTimeImmutable|null $stepStartedAt
      */
     public function __construct(
         WorkflowInstanceIdInterface $id,
@@ -152,7 +159,8 @@ class WorkflowInstance
         int $version = 1,
         ?string $lockedBy = null,
         ?DateTimeImmutable $lockExpiresAt = null,
-        ?DateTimeImmutable $scheduledAt = null
+        ?DateTimeImmutable $scheduledAt = null,
+        ?DateTimeImmutable $stepStartedAt = null
     ) {
         $this->id = $id;
         $this->definitionId = $definitionId;
@@ -170,6 +178,7 @@ class WorkflowInstance
         $this->lockedBy = $lockedBy;
         $this->lockExpiresAt = $lockExpiresAt;
         $this->scheduledAt = $scheduledAt;
+        $this->stepStartedAt = $stepStartedAt;
     }
 
     public function addHistoryEvent(string $message, ?string $stepId = null): void
