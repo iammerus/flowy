@@ -79,6 +79,9 @@ echo "Started instance: " . $instance->id->toString() . PHP_EOL;
   composer cs
   ```
 
+## 📚 Further Documentation
+- See [docs/CoreConcepts.md](./docs/CoreConcepts.md) for an overview of Flowy's core concepts.
+
 ---
 
 Flowy is open-source and welcomes contributions! Please see the roadmap and specification before submitting PRs.
