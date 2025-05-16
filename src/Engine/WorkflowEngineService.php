@@ -132,7 +132,14 @@ final class WorkflowEngineService implements WorkflowEngineInterface
             'signal' => $signalName,
             'payload' => $payload,
         ]);
-        // Event dispatching for signals can be added in future phases
+        $this->eventDispatcher->dispatch(
+            new \Flowy\Event\WorkflowSignalReceivedEvent(
+                $instance,
+                $signalName,
+                $payload,
+                new \DateTimeImmutable()
+            )
+        );
     }
 
     public function getInstance(WorkflowInstanceIdInterface $id): ?WorkflowInstance

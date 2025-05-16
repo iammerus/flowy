@@ -334,6 +334,24 @@ class WorkflowEngineServiceTest extends TestCase
         $engine->signal($id, 'signal', []);
     }
 
+    public function testSignalDispatchesWorkflowSignalReceivedEvent(): void
+    {
+        $id = $this->createMock(WorkflowInstanceIdInterface::class);
+        $instance = $this->makeInstance($id, WorkflowStatus::RUNNING);
+        $persistence = $this->createMock(PersistenceInterface::class);
+        $persistence->method('find')->willReturn($instance);
+        $persistence->expects($this->once())->method('save')->with($instance);
+        $executor = $this->createMock(WorkflowExecutorInterface::class);
+        $definitionRegistry = $this->createMock(DefinitionRegistryInterface::class);
+        $logger = $this->createMock(\Psr\Log\LoggerInterface::class);
+        $eventDispatcher = $this->createMock(\Psr\EventDispatcher\EventDispatcherInterface::class);
+        $eventDispatcher->expects($this->once())
+            ->method('dispatch')
+            ->with($this->isInstanceOf(\Flowy\Event\WorkflowSignalReceivedEvent::class));
+        $engine = new \Flowy\Engine\WorkflowEngineService($executor, $persistence, $definitionRegistry, $logger, $eventDispatcher);
+        $engine->signal($id, 'signal_name', ['foo' => 'bar']);
+    }
+
     private function makeInstance($id, WorkflowStatus $status): WorkflowInstance
     {
         return new WorkflowInstance(
