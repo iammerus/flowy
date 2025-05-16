@@ -15,11 +15,22 @@ class FlowyDefinitionListCommandTest extends TestCase
     public function testListCommandShowsDefinitions(): void
     {
         $registry = new InMemoryDefinitionRegistry();
+        $step = new \Flowy\Model\Data\StepDefinition(
+            'start',
+            [],
+            [],
+            'Start',
+            null,
+            true,
+            'action',
+            null, // description
+            null  // retryPolicy
+        );
         $def = new WorkflowDefinition(
             'order_fulfillment',
             '1.0.0',
             'start',
-            [],
+            [$step], // Provide at least one step
             'Order Fulfillment',
             'Handles order processing.'
         );

@@ -6,6 +6,7 @@ declare(strict_types=1);
 use Symfony\Component\Console\Application;
 use Flowy\CLI\FlowyListCommand;
 use Flowy\CLI\FlowyDefinitionListCommand;
+use Flowy\CLI\FlowyDefinitionShowCommand;
 use Flowy\Registry\InMemoryDefinitionRegistry;
 
 require __DIR__ . '/../vendor/autoload.php';
@@ -14,5 +15,6 @@ $definitionRegistry = new InMemoryDefinitionRegistry();
 $application = new Application('Flowy Workflow Engine CLI', '0.1.0');
 $application->add(new FlowyListCommand());
 $application->add(new FlowyDefinitionListCommand($definitionRegistry));
+$application->add(new FlowyDefinitionShowCommand($definitionRegistry));
 $application->setDefaultCommand('flowy:list', true);
 $application->run();
