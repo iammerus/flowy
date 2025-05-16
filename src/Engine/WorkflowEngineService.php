@@ -12,6 +12,7 @@ use Flowy\Persistence\PersistenceInterface;
 use Flowy\Registry\DefinitionRegistryInterface;
 use Psr\Log\LoggerInterface;
 use Flowy\Engine\WorkflowExecutorInterface;
+use Flowy\Event\NullEventDispatcher;
 
 /**
  * Default implementation of WorkflowEngineInterface.
@@ -24,7 +25,8 @@ final class WorkflowEngineService implements WorkflowEngineInterface
         private readonly WorkflowExecutorInterface $executor,
         private readonly PersistenceInterface $persistence,
         private readonly DefinitionRegistryInterface $definitionRegistry,
-        private readonly LoggerInterface $logger
+        private readonly LoggerInterface $logger,
+        private readonly \Psr\EventDispatcher\EventDispatcherInterface $eventDispatcher = new NullEventDispatcher()
     ) {}
 
     public function start(string $workflowId, ?string $version = null, ?WorkflowContext $context = null, ?string $businessKey = null): WorkflowInstance
@@ -66,6 +68,7 @@ final class WorkflowEngineService implements WorkflowEngineInterface
                 'instance_id' => (string)$id,
                 'workflow_id' => $instance->definitionId,
             ]);
+            // Event dispatching for pause can be added in future if needed
         }
     }
 
@@ -79,6 +82,7 @@ final class WorkflowEngineService implements WorkflowEngineInterface
                 'instance_id' => (string)$id,
                 'workflow_id' => $instance->definitionId,
             ]);
+            $this->eventDispatcher->dispatch(new \Flowy\Event\WorkflowStartedEvent($instance));
             $this->executor->proceed($id);
         }
     }
@@ -93,6 +97,24 @@ final class WorkflowEngineService implements WorkflowEngineInterface
                 'instance_id' => (string)$id,
                 'workflow_id' => $instance->definitionId,
             ]);
+            $this->eventDispatcher->dispatch(new \Flowy\Event\WorkflowCancelledEvent($instance));
+        }
+    }
+
+    public function retryFailedStep(WorkflowInstanceIdInterface $id): void
+    {
+        $instance = $this->getInstance($id);
+        if ($instance && $instance->status === WorkflowStatus::FAILED) {
+            $instance->retryAttempts = 0;
+            $instance->status = WorkflowStatus::PENDING;
+            $instance->errorDetails = null;
+            $this->persistence->save($instance);
+            $this->logger->info('Workflow instance retry initiated', [
+                'instance_id' => (string)$id,
+                'workflow_id' => $instance->definitionId,
+            ]);
+            $this->eventDispatcher->dispatch(new \Flowy\Event\WorkflowStartedEvent($instance));
+            $this->executor->proceed($id);
         }
     }
 
