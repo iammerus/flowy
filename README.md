@@ -9,7 +9,7 @@ Flowy is a modern, extensible PHP workflow engine designed for robust, maintaina
 Install Flowy via Composer:
 
 ```bash
-composer require flowy/core
+composer require iammerus/flowy
 ```
 
 ### Minimal Example: Define and Run a Workflow
